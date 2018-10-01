@@ -1,9 +1,10 @@
 #include <iostream>
-#include <Eigen/Dense>
+#include <string>
+// #include <Eigen/Dense>
 // #include <KroneckerProduct>
 
 using namespace std;
-using namespace Eigen;
+// using namespace Eigen;
 
 // #define PI 3.14159265358979323846
 // #define IM std::complex<double> (0.0, 1.0)
@@ -45,19 +46,23 @@ using namespace Eigen;
 // 	return;
 // }
 
-void printit(ArrayXf c) {
-	cout << c << endl;
-}
-
 int main() {
-	ArrayXf cx(20), cy(20);
-	VectorXf v(40);
-	cx.setZero(); cy.setZero();
-	cx[0] = 5; cx[19] = 3;
+	int (*array)[2];
 
-	v << cx, cy;
+	array = new int[10][2];
 
-	printit(v.head(20));
+	for(int i = 0; i < 2; i++) {
+		for(int j = 0; j < 10; j++){
+			array[j][i] = i*j;
+		}
+	}
+
+	for(int i = 0; i < 2; i++) {
+		for(int j = 0; j < 10; j++){
+			cout << array[j][i] << ' ';
+		}
+		cout << endl;
+	}
 
  	return 0;
 }

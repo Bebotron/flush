@@ -7,22 +7,24 @@
 //#include <KroneckerProduct>
 
 #include "omp.h"
-#include "basic_funcs.h"
+#include "basic_funcs_vec.h"
 #include "time.h"
 
 using namespace std;
 using namespace Eigen;
 
 void printRunTime(time_t t0, time_t t1) {
-    int t_run, h, m, s; 
+    int t_run, d, h, m, s; 
     t_run = difftime(t1, t0);
+    d = floor(t_run/(24*3600));
     h = floor(t_run/3600);
-    m = floor(t_run/60);
+    m = floor(t_run/60); m = m%60;
     s = t_run%60;
-    cout << "TIME TO RUN:\n" 
-         << h << " hr " 
-         << (m%60) << " min " 
-         << s << " sec " << endl;
+    cout << "TIME TO RUN:\n"
+         << d << "d " 
+         << h << "h " 
+         << m << "m " 
+         << s << "s " << endl;
     return;
 }
 
@@ -35,6 +37,16 @@ void outputPlotData(string filename, ArrayXXf& FdataList) {
         }
         fout << endl;
     }
+    fout.close();
+    return;
+}
+
+void outputPulseData(string filename, ArrayXf& cx, ArrayXf& cy) {
+    ofstream fout;
+    fout.open(filename.c_str());
+    for(int i = 0; i < cx.size(); i++) fout << cx(i) << " ";
+    fout << endl;
+    for(int i = 0; i < cy.size(); i++) fout << cy(i) << " ";
     fout.close();
     return;
 }
@@ -90,60 +102,76 @@ void optimizeFlushCycle(int mult, int k, int mintf, int maxtf, MatrixXcd *rhoLis
 int main() {
     string evolve_file, pulse_file;
     time_t t0, t1;
-    int tp, tf, num_ops, numFidelities, Ncycles, Ohm, maxIt;
+    int tp, tf, num_states, numFidelities, Ncycles, Ohm, listLength, maxIt;
     float dt, dc, acc, collapseOn, collapseOff, J, F;
     bool flush, checking_min;
-    Matrix2cd I, s0, s1;
-    I = Matrix2cd::Identity();
-    s0 << 1, 0, 0, 0; s1 << 0, 0, 0, 1;
-    MatrixXcd rho000, rho111, rho100, rho010, rho001, rho110, rho101, rho011,
-              r000NNN, r111NNN, r100NNN, r010NNN, r001NNN, r110NNN, r101NNN, r011NNN, r000100, finalState;
-    MatrixXcd ls000[] = {s0,s0,s0,s0,s0,s0}; MatrixXcd ls111[] = {s1,s1,s1,s0,s0,s0}; 
-    MatrixXcd ls100[] = {s1,s0,s0,s0,s0,s0}; MatrixXcd ls010[] = {s0,s1,s0,s0,s0,s0};
-    MatrixXcd ls001[] = {s0,s0,s1,s0,s0,s0}; MatrixXcd ls110[] = {s1,s1,s0,s0,s0,s0};
-    MatrixXcd ls101[] = {s1,s0,s1,s0,s0,s0}; MatrixXcd ls011[] = {s0,s1,s1,s0,s0,s0};
-    MatrixXcd N000[] = {s0,s0,s0,I,I,I}; MatrixXcd N111[] = {s1,s1,s1,I,I,I}; 
-    MatrixXcd N100[] = {s1,s0,s0,I,I,I}; MatrixXcd N010[] = {s0,s1,s0,I,I,I};
-    MatrixXcd N001[] = {s0,s0,s1,I,I,I}; MatrixXcd N110[] = {s1,s1,s0,I,I,I};
-    MatrixXcd N101[] = {s1,s0,s1,I,I,I}; MatrixXcd N011[] = {s0,s1,s1,I,I,I};
-    MatrixXcd ls000100[] = {s0,s0,s0,s1,s0,s0};
-    num_ops = 6;
+    Vector2cd ks0, ks1;
+    Matrix2cd rs0, rs1;
+    ks0 << 1, 0; ks1 << 0, 1;
+    rs0 << 1, 0, 0, 0; rs1 << 0, 0, 0, 1;
+    VectorXcd ket000, ket111, ket100, ket010, ket001, ket110, ket101, ket011, k000100;
+    MatrixXcd rho000, rho111, rho100, rho010, rho001, rho110, rho101, rho011, finalState;
+    VectorXcd kls000[] = {ks0,ks0,ks0,ks0,ks0,ks0};
+    VectorXcd kls111[] = {ks1,ks1,ks1,ks0,ks0,ks0};
+    VectorXcd kls100[] = {ks1,ks0,ks0,ks0,ks0,ks0};
+    VectorXcd kls010[] = {ks0,ks1,ks0,ks0,ks0,ks0};
+    VectorXcd kls001[] = {ks0,ks0,ks1,ks0,ks0,ks0};
+    VectorXcd kls110[] = {ks1,ks1,ks0,ks0,ks0,ks0};
+    VectorXcd kls101[] = {ks1,ks0,ks1,ks0,ks0,ks0};
+    VectorXcd kls011[] = {ks0,ks1,ks1,ks0,ks0,ks0};
+    VectorXcd kls000100[] = {ks0,ks0,ks0,ks1,ks0,ks0};
+    MatrixXcd rls000[] = {rs0,rs0,rs0,rs0,rs0,rs0};
+    MatrixXcd rls111[] = {rs1,rs1,rs1,rs0,rs0,rs0};
+    MatrixXcd rls100[] = {rs1,rs0,rs0,rs0,rs0,rs0};
+    MatrixXcd rls010[] = {rs0,rs1,rs0,rs0,rs0,rs0};
+    MatrixXcd rls001[] = {rs0,rs0,rs1,rs0,rs0,rs0};
+    MatrixXcd rls110[] = {rs1,rs1,rs0,rs0,rs0,rs0};
+    MatrixXcd rls101[] = {rs1,rs0,rs1,rs0,rs0,rs0};
+    MatrixXcd rls011[] = {rs0,rs1,rs1,rs0,rs0,rs0};
+    num_states = 6;
 
-    ArrayXf cx(20), cy(20); 
-    ArrayXf pulse_c[2];
+    ArrayXf cx(20), cy(20);
     cx.setZero(); cy.setZero();
-    pulse_c[0].setZero(20); pulse_c[1].setZero(20);// pulse_c[2].setZero(20);
-    tp = 40; tf = 40; Ncycles = 3; numFidelities = 2;
-    dt = 0.1; dc = 0.0001; acc = 1e-5;
+    tp = 40; tf = 100; Ncycles = 20; numFidelities = 3;
+    dt = 0.01; dc = 1e-6; acc = 1e-5;
     collapseOn = 1e-3/(2*10); collapseOff = 0.03; J = 0.02;
-    flush = 1; checking_min = 0;
+    flush = 0; checking_min = 1;
 
     ArrayXf fidelities(numFidelities + 1);
     fidelities.setZero();
 
-    basic_funcs bf(collapseOn, collapseOff, J);
+    basic_funcs_vec bf(collapseOn, collapseOff, J);
 
-    rho000 = bf.tensor(ls000, num_ops); rho111 = bf.tensor(ls111, num_ops);
-    rho100 = bf.tensor(ls100, num_ops); rho010 = bf.tensor(ls010, num_ops);
-    rho001 = bf.tensor(ls001, num_ops); rho110 = bf.tensor(ls110, num_ops);
-    rho101 = bf.tensor(ls101, num_ops); rho011 = bf.tensor(ls011, num_ops);
-    r000NNN = bf.tensor(N000, num_ops); r111NNN = bf.tensor(N111, num_ops);
-    r100NNN = bf.tensor(N100, num_ops); r010NNN = bf.tensor(N010, num_ops);
-    r001NNN = bf.tensor(N001, num_ops); r110NNN = bf.tensor(N110, num_ops);
-    r101NNN = bf.tensor(N101, num_ops); r011NNN = bf.tensor(N011, num_ops);
-    r000100 = bf.tensor(ls000100, num_ops);
+    ket000 = bf.tensor_vec(kls000, num_states);
+    ket111 = bf.tensor_vec(kls111, num_states);
+    ket100 = bf.tensor_vec(kls100, num_states);
+    ket010 = bf.tensor_vec(kls010, num_states);
+    ket001 = bf.tensor_vec(kls001, num_states);
+    ket110 = bf.tensor_vec(kls110, num_states);
+    ket101 = bf.tensor_vec(kls101, num_states);
+    ket011 = bf.tensor_vec(kls011, num_states);
+    k000100 = bf.tensor_vec(kls000100, num_states);
+    rho000 = bf.tensor(rls000, num_states);
+    rho111 = bf.tensor(rls111, num_states);
+    rho100 = bf.tensor(rls100, num_states);
+    rho010 = bf.tensor(rls010, num_states);
+    rho001 = bf.tensor(rls001, num_states);
+    rho110 = bf.tensor(rls110, num_states);
+    rho101 = bf.tensor(rls101, num_states);
+    rho011 = bf.tensor(rls011, num_states);
 
     // MatrixXcd rhoList[8] = {rho000, rho100, rho010, rho001, rho110, rho101, rho011, rho111};
 
-    // evolve_file = "./outFiles/output_" + to_string(tp) + "_" + to_string(tf) + ".dat";
-
-    maxIt = 0;
-    // evolve_file = "./outFiles/output_" + to_string(maxIt) + ".dat";
-    evolve_file = "./output_" + to_string(maxIt) + ".dat";
-
-    // int listLength = tp/dt + 1;
+    maxIt = 40000;
+    if(checking_min) {
+        evolve_file = "./tp=" + to_string(tp) + "_tf=" + to_string(tf) + "_numF=" + to_string(numFidelities) + "_min.dat";
+        pulse_file = "./tp=" + to_string(tp) + "_numF=" + to_string(numFidelities) + "_min.pls";
+    }
+    else {
+        evolve_file = "./tp=" + to_string(tp) + "_tf=" + to_string(tf) + "_numF=" + to_string(numFidelities) + ".dat";
+        pulse_file = "./tp=" + to_string(tp) + "_numF=" + to_string(numFidelities) + ".pls";
+    }
     ArrayXXf dataList;
-    // dataList.setZero(2, listLength);
     // if(flush) evolve_file = "./outFiles/yes_coupling.dat";
     // else evolve_file = "./outFiles/no_coupling.dat";
 
@@ -154,12 +182,11 @@ int main() {
     evolve_file += ".dat";
     */
 
-    // cx << 0.0200494,4.03523e-05,-0.000354767,1.01328e-05,-0.000664413,2.54512e-05,-0.0010761,-0.000144541,-0.000993192,-1.40071e-05,0.000656784,8.40425e-06,2.15173e-05,0.00011009,0.000214219,3.09944e-06,0.000324488,0.000138164,0.000117004,0.000171006;
-    // cy << 7.86781e-06,-7.40886e-05,-5.45979e-05,-7.19428e-05,1.00732e-05,0.000286579,-7.75456e-05,0.000314772,-0.000200331,-0.000244141,-2.58088e-05,-0.00012368,-6.00219e-05,-0.00010401,2.69413e-05,-2.68817e-05,-9.77516e-06,0.000133336,-0.00010711,0.00128168;
-    // cx[0] = 0.0061685; cy[0] = 0.006;
-    // cx[0] = 0.01; cy[0] = 0.009;
-    cx[0] = 0.002;
-    pulse_c[0] = cx; pulse_c[1] = cy;
+    cx << 0.00829447, -3.51667e-06, -3.016e-05, -1.31726e-05, -1.77622e-05, -8.76188e-06, -8.64267e-06, -1.18613e-05, -1.23978e-05, -1.80602e-05, -9.94802e-05, -0.0001598, -0.000194311, -0.000140548, -2.31266e-05, -1.57952e-05, -0.00126237, -2.72393e-05, 0.00196034, -2.98023e-07;
+    cy << 0.00158238, -8.40425e-06, 1.2517e-05, 1.3113e-06, 1.11461e-05, 4.29153e-06, 9.77516e-06, -3.99351e-06, -5.60284e-06, -1.58548e-05, -9.67979e-05, -0.000161111, -0.000192523, -0.000142634, -1.41859e-05, -2.21729e-05, 0.00124627, 1.43051e-06, -0.00196636, -1.35899e-05;
+    // cx[0] = 0.061685; cy[0] = 0.05;
+    // cx[0] = 0.01;
+    
 
     time(&t0);
 
@@ -167,17 +194,20 @@ int main() {
     int t_cyc[] = {tp, tf};
     Ohm = 0;
 
-    bf.optimizePulse(tp, dt, maxIt, dc, acc, cx, cy, rho000, rho100, rho010, r000100, fidelities, dataList, numFidelities, checking_min);
+    // optimize pulse with minimum Fidelity tracking
+    // bf.optimizePulse(tp, dt, maxIt, dc, acc, cx, cy, ket000, ket100, ket010, k000100, fidelities, dataList, numFidelities, checking_min);
 
-    // bf.getFidelity(cx, cy, tp, dt, rho000, rho100, rho010, r100100, numFidelities, fidelities, dataList, checking_min);
+    // bf.getFidelity(cx, cy, tp, dt, ket000, ket100, ket010, r100100, r100NNN, r010NNN, numFidelities, fidelities, dataList, checking_min);
     
-    // bf.evolveState(dt, Ncycles, rho111, rho111, tp, tf, pulse_c, Ohm, flush, dataList, F, finalState);
+
+    // cout << "FIDELITY " << (rho111*rho111.adjoint()).cwiseAbs().trace() << endl;
+    bf.evolveState(dt, Ncycles, rho111, rho111, tp, tf, cx, cy, Ohm, flush, dataList, F, finalState);
     outputPlotData(evolve_file, dataList);
-    // cout << finalState << endl;
+    // outputPulseData(pulse_file, cx, cy);
 
     // ArrayXXf prob00to10[5];
-    // ArrayXf optVal;
-    // optVal.setZero(5);    
+    // ArrayXf optVal[5];
+    // optVal.setZero();    
     // for(int k = 1; k < 6; k++) {
     //     optimizeFlushCycle(10, k, 1, 13, rhoList, cx, cy, prob00to10[k - 1]);
     //     optVal[k - 1] = prob00to10[k - 1].rowwise().maxCoeff()(1);
