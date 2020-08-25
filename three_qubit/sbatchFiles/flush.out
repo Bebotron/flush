@@ -1,5 +1,0 @@
-icpc -c -std=c++11 -openmp ../flush_main.cpp
-icpc -c -std=c++11 -openmp ../basic_funcs.cpp
-icpc -std=c++11 -openmp flush_main.o basic_funcs.o -o flush.exe
-**************** ENTERING TIMED SECTION *****************
-TIME TO RUN :: 15
